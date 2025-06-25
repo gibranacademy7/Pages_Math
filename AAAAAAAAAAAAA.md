@@ -1,109 +1,43 @@
+### 🧠 התאמה אישית של NER ב־spaCy
 
-# 🌳 חישוב Gini Impurity בעץ החלטה — דוגמה מלאה
+#### למה נרצה להוסיף ישויות ידנית?
+לפעמים spaCy לא מזהה ישויות שאנחנו כן רוצים לזהות – לדוגמה, "Tesla" לא מזוהה כברירת מחדל כישות מסוג ORG  
+במקרים כאלה נוכל להוסיף את הישות ידנית למסמך
 
-נניח שיש לנו מערכת נתונים פשוטה עם שני מאפיינים (X1, X2) וקטגוריה יעד (Y) כפי שמוצג בטבלה:
+#### השלבים להוספת ישות ידנית:
+1. שליפת הערך המספרי (hash) של התווית הרצויה (למשל "ORG")
+2. יצירת Span מהמילה או הביטוי הרצוי
+3. הוספת ה־Span לרשימת הישויות במסמך `doc.ents`
 
-| X1 | X2 | Y |
-|----|----|----|
-| 1  | 3  | A |
-| 2  | 1  | A |
-| 3  | 2  | B |
-| 4  | 3  | B |
-| 5  | 1  | A |
-| 6  | 2  | B |
+```python
+from spacy.tokens import Span
 
----
+ORG = doc.vocab.strings["ORG"]
+new_ent = Span(doc, start=0, end=1, label=ORG)
+doc.ents = list(doc.ents) + [new_ent]
+```
 
-## 🔹 חישוב Gini של השורש (Root)
+#### דוגמה מתקדמת – Phrase Matcher
+אם נרצה לזהות ביטויים שלמים כמו:
+- `dashboard website`
+- `dashboard-website`
 
-סופרים כמה מכל קטגוריה:
+נשתמש ב־PhraseMatcher לזיהוי הביטויים במסמך, ואז נוסיף אותם כישויות:
 
-- A: 3 דגימות → $$ p_A = \frac{3}{6} $$
-- B: 3 דגימות → $$ p_B = \frac{3}{6} $$
+```python
+from spacy.matcher import PhraseMatcher
 
-נחשב Gini impurity בשורש:
+matcher = PhraseMatcher(nlp.vocab)
+patterns = [nlp("dashboard website"), nlp("dashboard-website")]
+matcher.add("PRODUCT", patterns)
 
-$$
-G(root) = 1 - (0.5^2 + 0.5^2) = 1 - (0.25 + 0.25) = 0.5
-$$
+matches = matcher(doc)
+new_ents = [Span(doc, start, end, label=doc.vocab.strings["PRODUCT"]) for match_id, start, end in matches]
+doc.ents = list(doc.ents) + new_ents
+```
 
----
-
-## ✂️ נבחן פיצול לפי X1 <= 3
-
-### קבוצה שמאלית (X1 <= 3):
-
-- דגימות: (1,A), (2,A), (3,B)  
-- A: 2 מתוך 3 → $$ p_A = \frac{2}{3}, p_B = \frac{1}{3} $$
-
-$$
-G(left) = 1 - \left(\left(\frac{2}{3}\right)^2 + \left(\frac{1}{3}\right)^2\right) = 1 - \left(\frac{4}{9} + \frac{1}{9}\right) = 1 - \frac{5}{9} = \frac{4}{9} \approx 0.44
-$$
-
-### קבוצה ימנית (X1 > 3):
-
-- דגימות: (4,B), (5,A), (6,B)  
-- A: 1 מתוך 3 → $$ p_A = \frac{1}{3}, p_B = \frac{2}{3} $$
-
-$$
-G(right) = 1 - \left(\left(\frac{1}{3}\right)^2 + \left(\frac{2}{3}\right)^2\right) = 1 - \left(\frac{1}{9} + \frac{4}{9}\right) = 1 - \frac{5}{9} = \frac{4}{9} \approx 0.44
-$$
-
-### חישוב Gini הכולל לאחר הפיצול:
-
-$$
-G_{weighted} = \frac{3}{6} \cdot 0.44 + \frac{3}{6} \cdot 0.44 = 0.44
-$$
-
-### רווח (Gain) מהפיצול:
-
-$$
-Gain = G(root) - G_{weighted} = 0.5 - 0.44 = 0.06
-$$
-
----
-
-## ✂️ נבחן פיצול לפי X2 <= 2
-
-### קבוצה שמאלית (X2 <= 2):
-
-- דגימות: (2,A), (3,B), (5,A), (6,B)  
-- A: 2, B: 2 → $$ p_A = p_B = 0.5 $$
-
-$$
-G(left) = 1 - (0.5^2 + 0.5^2) = 0.5
-$$
-
-### קבוצה ימנית (X2 > 2):
-
-- דגימות: (1,A), (4,B)  
-- A: 1, B: 1 → $$ p_A = p_B = 0.5 $$
-
-$$
-G(right) = 0.5
-$$
-
-### Gini משוקלל:
-
-$$
-G_{weighted} = \frac{4}{6} \cdot 0.5 + \frac{2}{6} \cdot 0.5 = 0.5
-$$
-
-### רווח:
-
-$$
-Gain = 0.5 - 0.5 = 0
-$$
-
----
-
-## ✅ מסקנה:
-
-- הפיצול לפי **X1** מפחית את Gini ל-0.44 → רווח (Gain) של **0.06**
-- הפיצול לפי **X2** לא משפר את Gini כלל
-
-🔮 לכן עדיף לפצל לפי **X1 ≤ 3**
-
----
-
-💃 ולגבי הטנגו... אם ה-GINI יורד — אנחנו רוקדים את ריקוד ההחלטות כמו מקצוענים 🕺❤️
+#### שימושים נוספים:
+אפשר גם:
+- לספור ישויות לפי סוג: `len([ent for ent in doc.ents if ent.label_ == "ORG"])`
+- להציג את כל הישויות עם הסוגים שלהן
+- להדפיס את מיקום ההתחלה והסיום של כל ישות
